@@ -20,7 +20,8 @@ func New(service *application.Service) *Server {
 	return s
 }
 func (s *Server) Handler() http.Handler {
-	handler := withTimeout(15*time.Second, s.mux)
+	handler := notFoundRewrite(s.mux)
+	handler = withTimeout(15*time.Second, handler)
 	handler = recoverPanics(handler)
 	handler = requestLog(handler)
 	handler = securityHeaders(handler)
