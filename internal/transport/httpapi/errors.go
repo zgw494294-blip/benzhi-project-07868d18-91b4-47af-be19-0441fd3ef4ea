@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -14,6 +15,8 @@ func mapError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	status, code, message := http.StatusInternalServerError, "internal_error", "服务内部错误"
 	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		status, code, message = 499, "request_canceled", "请求已取消"
 	case errors.Is(err, application.ErrNotFound):
 		status, code, message = http.StatusNotFound, "not_found", "监测活动不存在"
 	case errors.Is(err, application.ErrVersionConflict):

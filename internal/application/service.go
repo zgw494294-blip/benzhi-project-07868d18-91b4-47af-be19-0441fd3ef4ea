@@ -49,7 +49,7 @@ func (s *Service) CreateCampaign(ctx context.Context, cmd CreateCampaignCommand)
 		*current = *created
 		return nil
 	}
-	return s.repo.Run(context.WithoutCancel(ctx), mutation)
+	return s.repo.Run(ctx, mutation)
 }
 
 func (s *Service) RegisterInstruments(ctx context.Context, cmd RegisterInstrumentsCommand) (*monitoring.Campaign, bool, error) {
@@ -60,7 +60,7 @@ func (s *Service) RegisterInstruments(ctx context.Context, cmd RegisterInstrumen
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(context.WithoutCancel(ctx), Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "InstrumentsRegistered", Actor: cmd.Actor, Details: fmt.Sprintf("登记 %d 项校准证据", len(cmd.Instruments)), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "InstrumentsRegistered", Actor: cmd.Actor, Details: fmt.Sprintf("登记 %d 项校准证据", len(cmd.Instruments)), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		return c.RegisterInstruments(copyInstruments(cmd.Instruments), cmd.Actor, now)
 	}})
 }
@@ -73,7 +73,7 @@ func (s *Service) AddRound(ctx context.Context, cmd AddRoundCommand) (*monitorin
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(context.WithoutCancel(ctx), Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "MeasurementRoundRecorded", Actor: cmd.Actor, Details: "提交测量轮次", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "MeasurementRoundRecorded", Actor: cmd.Actor, Details: "提交测量轮次", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		round := copyRound(cmd.Round)
 		if err := c.AddRoundByActor(round, cmd.Actor, now); err != nil {
 			return err
@@ -90,7 +90,7 @@ func (s *Service) SubmitReview(ctx context.Context, cmd SubmitReviewCommand) (*m
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(context.WithoutCancel(ctx), Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "ReviewSubmitted", Actor: cmd.Actor, Details: "完成自动检查并提交复核", OccurredAt: now, Change: func(c *monitoring.Campaign) error { return c.SubmitForReview(now) }})
+	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "ReviewSubmitted", Actor: cmd.Actor, Details: "完成自动检查并提交复核", OccurredAt: now, Change: func(c *monitoring.Campaign) error { return c.SubmitForReview(now) }})
 }
 
 func (s *Service) DecideFinding(ctx context.Context, cmd DecideFindingCommand) (*monitoring.Campaign, bool, error) {
@@ -101,7 +101,7 @@ func (s *Service) DecideFinding(ctx context.Context, cmd DecideFindingCommand) (
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(context.WithoutCancel(ctx), Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "FindingDecided", Actor: cmd.Actor, Details: string(cmd.Decision), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "FindingDecided", Actor: cmd.Actor, Details: string(cmd.Decision), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		return c.DecideFinding(cmd.FindingID, cmd.Decision, cmd.Actor, cmd.Note, cmd.RemediationNote, now)
 	}})
 }
@@ -120,7 +120,7 @@ func (s *Service) Freeze(ctx context.Context, cmd FreezeCommand) (*monitoring.Ca
 		return nil, false, ErrVersionConflict
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(context.WithoutCancel(ctx), Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CampaignFrozen", Actor: cmd.Actor, Details: "冻结证据清单", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CampaignFrozen", Actor: cmd.Actor, Details: "冻结证据清单", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		if err := c.CanFreeze(); err != nil {
 			return err
 		}
@@ -165,7 +165,7 @@ func (s *Service) Issue(ctx context.Context, cmd IssueCommand) (*monitoring.Camp
 		return nil, false, &ValidationError{Message: "issuedBy 必须与 actor 一致"}
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(context.WithoutCancel(ctx), Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CredentialIssued", Actor: cmd.Actor, Details: "签发放行凭据", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CredentialIssued", Actor: cmd.Actor, Details: "签发放行凭据", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		credential, err := s.manifests.Issue(c, cmd.IssuedBy, now)
 		if err != nil {
 			return err

@@ -12,6 +12,9 @@ import (
 )
 
 func (r *Repository) Run(ctx context.Context, mutation application.Mutation) (*monitoring.Campaign, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return nil, false, err
@@ -75,6 +78,9 @@ func (r *Repository) Run(ctx context.Context, mutation application.Mutation) (*m
 		return nil, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO idempotency_records(key,campaign_id,request_hash,response_json,created_at) VALUES(?,?,?,?,?)`, mutation.IdempotencyKey, current.ID, mutation.RequestHash, response, mutation.OccurredAt.UTC().Format(timeLayout)); err != nil {
+		return nil, false, err
+	}
+	if err = ctx.Err(); err != nil {
 		return nil, false, err
 	}
 	if err = tx.Commit(); err != nil {
