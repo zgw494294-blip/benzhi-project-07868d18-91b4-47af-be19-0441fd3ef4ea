@@ -52,7 +52,12 @@ func (s *Service) CreateCampaign(ctx context.Context, cmd CreateCampaignCommand)
 		*current = *created
 		return nil
 	}
-	return s.repo.Run(ctx, mutation)
+	result, replayed, err := s.repo.Run(ctx, mutation)
+	if err != nil {
+		return nil, false, err
+	}
+	s.invalidatePreflight(cmd.ID)
+	return result, replayed, nil
 }
 
 func (s *Service) RegisterInstruments(ctx context.Context, cmd RegisterInstrumentsCommand) (*monitoring.Campaign, bool, error) {
@@ -63,9 +68,14 @@ func (s *Service) RegisterInstruments(ctx context.Context, cmd RegisterInstrumen
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "InstrumentsRegistered", Actor: cmd.Actor, Details: fmt.Sprintf("登记 %d 项校准证据", len(cmd.Instruments)), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	result, replayed, err := s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "InstrumentsRegistered", Actor: cmd.Actor, Details: fmt.Sprintf("登记 %d 项校准证据", len(cmd.Instruments)), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		return c.RegisterInstruments(copyInstruments(cmd.Instruments), cmd.Actor, now)
 	}})
+	if err != nil {
+		return nil, false, err
+	}
+	s.invalidatePreflight(cmd.CampaignID)
+	return result, replayed, nil
 }
 
 func (s *Service) AddRound(ctx context.Context, cmd AddRoundCommand) (*monitoring.Campaign, bool, error) {
@@ -76,13 +86,18 @@ func (s *Service) AddRound(ctx context.Context, cmd AddRoundCommand) (*monitorin
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "MeasurementRoundRecorded", Actor: cmd.Actor, Details: "提交测量轮次", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	result, replayed, err := s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "MeasurementRoundRecorded", Actor: cmd.Actor, Details: "提交测量轮次", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		round := copyRound(cmd.Round)
 		if err := c.AddRoundByActor(round, cmd.Actor, now); err != nil {
 			return err
 		}
 		return nil
 	}})
+	if err != nil {
+		return nil, false, err
+	}
+	s.invalidatePreflight(cmd.CampaignID)
+	return result, replayed, nil
 }
 
 func (s *Service) SubmitReview(ctx context.Context, cmd SubmitReviewCommand) (*monitoring.Campaign, bool, error) {
@@ -93,7 +108,12 @@ func (s *Service) SubmitReview(ctx context.Context, cmd SubmitReviewCommand) (*m
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "ReviewSubmitted", Actor: cmd.Actor, Details: "完成自动检查并提交复核", OccurredAt: now, Change: func(c *monitoring.Campaign) error { return c.SubmitForReview(now) }})
+	result, replayed, err := s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "ReviewSubmitted", Actor: cmd.Actor, Details: "完成自动检查并提交复核", OccurredAt: now, Change: func(c *monitoring.Campaign) error { return c.SubmitForReview(now) }})
+	if err != nil {
+		return nil, false, err
+	}
+	s.invalidatePreflight(cmd.CampaignID)
+	return result, replayed, nil
 }
 
 func (s *Service) DecideFinding(ctx context.Context, cmd DecideFindingCommand) (*monitoring.Campaign, bool, error) {
@@ -104,9 +124,14 @@ func (s *Service) DecideFinding(ctx context.Context, cmd DecideFindingCommand) (
 		return nil, false, err
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "FindingDecided", Actor: cmd.Actor, Details: string(cmd.Decision), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	result, replayed, err := s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "FindingDecided", Actor: cmd.Actor, Details: string(cmd.Decision), OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		return c.DecideFinding(cmd.FindingID, cmd.Decision, cmd.Actor, cmd.Note, cmd.RemediationNote, now)
 	}})
+	if err != nil {
+		return nil, false, err
+	}
+	s.invalidatePreflight(cmd.CampaignID)
+	return result, replayed, nil
 }
 
 func (s *Service) Freeze(ctx context.Context, cmd FreezeCommand) (*monitoring.Campaign, bool, error) {
@@ -123,7 +148,7 @@ func (s *Service) Freeze(ctx context.Context, cmd FreezeCommand) (*monitoring.Ca
 		return nil, false, ErrVersionConflict
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CampaignFrozen", Actor: cmd.Actor, Details: "冻结证据清单", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	result, replayed, err := s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CampaignFrozen", Actor: cmd.Actor, Details: "冻结证据清单", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		if err := c.CanFreeze(); err != nil {
 			return err
 		}
@@ -136,13 +161,18 @@ func (s *Service) Freeze(ctx context.Context, cmd FreezeCommand) (*monitoring.Ca
 		}
 		return c.Freeze(hash, now)
 	}})
+	if err != nil {
+		return nil, false, err
+	}
+	s.invalidatePreflight(cmd.CampaignID)
+	return result, replayed, nil
 }
 
 func (s *Service) FreezePreflight(ctx context.Context, id string, candidateVersion int64) (FreezePreflight, error) {
 	s.preflightMu.RLock()
 	cached, ok := s.preflightCache[id]
 	s.preflightMu.RUnlock()
-	if ok {
+	if ok && (candidateVersion == 0 || candidateVersion == cached.CandidateVersion) {
 		return cached, nil
 	}
 	c, err := s.repo.Get(ctx, id)
@@ -166,6 +196,14 @@ func (s *Service) FreezePreflight(ctx context.Context, id string, candidateVersi
 	return report, nil
 }
 
+// invalidatePreflight drops any cached preflight report for a campaign so the
+// next preflight recomputes from the campaign's current version and status.
+func (s *Service) invalidatePreflight(id string) {
+	s.preflightMu.Lock()
+	delete(s.preflightCache, id)
+	s.preflightMu.Unlock()
+}
+
 func (s *Service) Issue(ctx context.Context, cmd IssueCommand) (*monitoring.Campaign, bool, error) {
 	if err := validateMeta(cmd.CommandMeta, true); err != nil {
 		return nil, false, err
@@ -177,13 +215,18 @@ func (s *Service) Issue(ctx context.Context, cmd IssueCommand) (*monitoring.Camp
 		return nil, false, &ValidationError{Message: "issuedBy 必须与 actor 一致"}
 	}
 	now := s.clock().UTC()
-	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CredentialIssued", Actor: cmd.Actor, Details: "签发放行凭据", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
+	result, replayed, err := s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "CredentialIssued", Actor: cmd.Actor, Details: "签发放行凭据", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
 		credential, err := s.manifests.Issue(c, cmd.IssuedBy, now)
 		if err != nil {
 			return err
 		}
 		return c.Certify(credential, now)
 	}})
+	if err != nil {
+		return nil, false, err
+	}
+	s.invalidatePreflight(cmd.CampaignID)
+	return result, replayed, nil
 }
 
 func (s *Service) GetCampaign(ctx context.Context, id string) (*monitoring.Campaign, error) {
