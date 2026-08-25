@@ -11,9 +11,10 @@ import (
 type Clock func() time.Time
 
 type Service struct {
-	repo      Repository
-	manifests ManifestService
-	clock     Clock
+	repo         Repository
+	manifests    ManifestService
+	clock        Clock
+	roundScratch []monitoring.Sample
 }
 
 type FreezePreflight struct {
@@ -73,13 +74,30 @@ func (s *Service) AddRound(ctx context.Context, cmd AddRoundCommand) (*monitorin
 		return nil, false, err
 	}
 	now := s.clock().UTC()
+	round := s.stageRound(cmd.Round)
 	return s.repo.Run(ctx, Mutation{CampaignID: cmd.CampaignID, ExpectedVersion: cmd.ExpectedVersion, IdempotencyKey: cmd.IdempotencyKey, RequestHash: requestHash(cmd), EventType: "MeasurementRoundRecorded", Actor: cmd.Actor, Details: "提交测量轮次", OccurredAt: now, Change: func(c *monitoring.Campaign) error {
-		round := copyRound(cmd.Round)
 		if err := c.AddRoundByActor(round, cmd.Actor, now); err != nil {
 			return err
 		}
 		return nil
 	}})
+}
+
+func (s *Service) stageRound(source monitoring.MeasurementRound) monitoring.MeasurementRound {
+	result := source
+	s.roundScratch = append(s.roundScratch[:0], source.Samples...)
+	result.Samples = s.roundScratch
+	for i, sample := range source.Samples {
+		if sample.Environment == nil {
+			continue
+		}
+		environment := make(map[string]float64, len(sample.Environment))
+		for name, value := range sample.Environment {
+			environment[name] = value
+		}
+		result.Samples[i].Environment = environment
+	}
+	return result
 }
 
 func (s *Service) SubmitReview(ctx context.Context, cmd SubmitReviewCommand) (*monitoring.Campaign, bool, error) {
