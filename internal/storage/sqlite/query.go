@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"cleanroom-monitor-release/internal/application"
@@ -12,6 +13,11 @@ import (
 )
 
 type rowScanner interface{ Scan(...any) error }
+
+var (
+	timelineQueryMu sync.Mutex
+	timelineQuery   *sql.Stmt
+)
 
 func scanCampaign(row rowScanner) (*monitoring.Campaign, error) {
 	var data []byte
@@ -40,7 +46,7 @@ func (r *Repository) Get(ctx context.Context, id string) (*monitoring.Campaign, 
 }
 
 func (r *Repository) Timeline(ctx context.Context, id string) ([]monitoring.AuditEvent, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT sequence,campaign_id,event_type,actor,from_status,to_status,campaign_version,occurred_at,details FROM audit_events WHERE campaign_id=? ORDER BY sequence`, id)
+	rows, err := r.timelineRows(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -64,4 +70,17 @@ func (r *Repository) Timeline(ctx context.Context, id string) ([]monitoring.Audi
 		}
 	}
 	return events, nil
+}
+
+func (r *Repository) timelineRows(ctx context.Context, id string) (*sql.Rows, error) {
+	timelineQueryMu.Lock()
+	defer timelineQueryMu.Unlock()
+	if timelineQuery == nil {
+		statement, err := r.db.PrepareContext(ctx, `SELECT sequence,campaign_id,event_type,actor,from_status,to_status,campaign_version,occurred_at,details FROM audit_events WHERE campaign_id=? ORDER BY sequence`)
+		if err != nil {
+			return nil, err
+		}
+		timelineQuery = statement
+	}
+	return timelineQuery.QueryContext(ctx, id)
 }
