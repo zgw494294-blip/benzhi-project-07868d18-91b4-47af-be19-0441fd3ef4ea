@@ -64,9 +64,6 @@ func (r *Repository) Run(ctx context.Context, mutation application.Mutation) (*m
 		return nil, false, err
 	}
 	event := monitoring.AuditEvent{CampaignID: current.ID, EventType: mutation.EventType, Actor: mutation.Actor, FromStatus: oldStatus, ToStatus: current.Status, CampaignVersion: current.Version, OccurredAt: mutation.OccurredAt.UTC(), Details: mutation.Details}
-	if err = insertAudit(ctx, tx, event); err != nil {
-		return nil, false, err
-	}
 	if err = checkForeignKeys(ctx, tx); err != nil {
 		return nil, false, err
 	}
@@ -78,6 +75,9 @@ func (r *Repository) Run(ctx context.Context, mutation application.Mutation) (*m
 		return nil, false, err
 	}
 	if err = tx.Commit(); err != nil {
+		return nil, false, err
+	}
+	if err = insertAudit(ctx, r.db, event); err != nil {
 		return nil, false, err
 	}
 	return current, false, nil

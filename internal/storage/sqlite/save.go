@@ -98,8 +98,12 @@ func replaceEvidence(ctx context.Context, tx *sql.Tx, c *monitoring.Campaign) er
 	return nil
 }
 
-func insertAudit(ctx context.Context, tx *sql.Tx, event monitoring.AuditEvent) error {
-	_, err := tx.ExecContext(ctx, `INSERT INTO audit_events(campaign_id,event_type,actor,from_status,to_status,campaign_version,occurred_at,details) VALUES(?,?,?,?,?,?,?,?)`, event.CampaignID, event.EventType, event.Actor, event.FromStatus, event.ToStatus, event.CampaignVersion, event.OccurredAt.UTC().Format(timeLayout), event.Details)
+type auditExecutor interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func insertAudit(ctx context.Context, executor auditExecutor, event monitoring.AuditEvent) error {
+	_, err := executor.ExecContext(ctx, `INSERT INTO audit_events(campaign_id,event_type,actor,from_status,to_status,campaign_version,occurred_at,details) VALUES(?,?,?,?,?,?,?,?)`, event.CampaignID, event.EventType, event.Actor, event.FromStatus, event.ToStatus, event.CampaignVersion, event.OccurredAt.UTC().Format(timeLayout), event.Details)
 	if err != nil {
 		return fmt.Errorf("insert audit: %w", err)
 	}
