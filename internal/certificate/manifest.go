@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"sort"
 
 	"cleanroom-monitor-release/internal/domain/monitoring"
@@ -55,6 +56,13 @@ func canonical(c *monitoring.Campaign) manifest {
 	}
 	for i := range rounds {
 		sort.Slice(rounds[i].Samples, func(a, b int) bool { return rounds[i].Samples[a].ID < rounds[i].Samples[b].ID })
+		for sampleIndex := range rounds[i].Samples {
+			for name, value := range rounds[i].Samples[sampleIndex].Environment {
+				if value == 0 && math.Signbit(value) {
+					rounds[i].Samples[sampleIndex].Environment[name] = 0
+				}
+			}
+		}
 	}
 	return manifest{EncodingVersion: "cleanroom-manifest/v1", CampaignID: c.ID, FacilityName: c.FacilityName, RoomCode: c.RoomCode, CleanlinessClass: c.CleanlinessClass, PlannedDate: c.PlannedDate.UTC().Format("2006-01-02T15:04:05.999999999Z"), Revision: c.Version, Points: points, Instruments: instruments, Rounds: rounds, Findings: findings}
 }
