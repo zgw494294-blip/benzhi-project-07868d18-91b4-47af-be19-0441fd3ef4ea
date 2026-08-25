@@ -4,14 +4,19 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"hash"
 	"sort"
 
 	"cleanroom-monitor-release/internal/domain/monitoring"
 )
 
-type Generator struct{}
+type Generator struct {
+	digest hash.Hash
+}
 
-func NewGenerator() *Generator { return &Generator{} }
+func NewGenerator() *Generator {
+	return &Generator{digest: sha256.New()}
+}
 
 type manifest struct {
 	EncodingVersion  string                          `json:"encodingVersion"`
@@ -64,6 +69,9 @@ func (g *Generator) Hash(c *monitoring.Campaign) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256(data)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
+	g.digest.Reset()
+	if _, err := g.digest.Write(data); err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(g.digest.Sum(nil)), nil
 }
