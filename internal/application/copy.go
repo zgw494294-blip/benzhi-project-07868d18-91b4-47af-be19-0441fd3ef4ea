@@ -37,3 +37,9 @@ func copyRound(source monitoring.MeasurementRound) monitoring.MeasurementRound {
 	}
 	return result
 }
+
+func copyVerificationReport(source monitoring.CredentialVerificationReport) monitoring.CredentialVerificationReport {
+	result := source
+	result.Checks = append([]monitoring.VerificationCheck(nil), source.Checks...)
+	return result
+}

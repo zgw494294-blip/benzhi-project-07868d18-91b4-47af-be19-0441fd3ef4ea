@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"cleanroom-monitor-release/internal/domain/monitoring"
@@ -11,9 +12,11 @@ import (
 type Clock func() time.Time
 
 type Service struct {
-	repo      Repository
-	manifests ManifestService
-	clock     Clock
+	repo              Repository
+	manifests         ManifestService
+	clock             Clock
+	verificationMu    sync.RWMutex
+	verificationCache map[string]monitoring.CredentialVerificationReport
 }
 
 type FreezePreflight struct {
@@ -29,7 +32,7 @@ func NewService(repo Repository, manifests ManifestService, clock Clock) *Servic
 	if clock == nil {
 		clock = time.Now
 	}
-	return &Service{repo: repo, manifests: manifests, clock: clock}
+	return &Service{repo: repo, manifests: manifests, clock: clock, verificationCache: make(map[string]monitoring.CredentialVerificationReport)}
 }
 
 func (s *Service) CreateCampaign(ctx context.Context, cmd CreateCampaignCommand) (*monitoring.Campaign, bool, error) {
@@ -183,7 +186,17 @@ func (s *Service) Timeline(ctx context.Context, id string) ([]monitoring.AuditEv
 func (s *Service) VerifyCredential(ctx context.Context, id string) (monitoring.CredentialVerificationReport, error) {
 	c, err := s.repo.Get(ctx, id)
 	if err != nil {
+		s.verificationMu.RLock()
+		cached, ok := s.verificationCache[id]
+		s.verificationMu.RUnlock()
+		if ok {
+			return copyVerificationReport(cached), nil
+		}
 		return monitoring.CredentialVerificationReport{}, err
 	}
-	return s.manifests.VerifyDetailed(c), nil
+	report := s.manifests.VerifyDetailed(c)
+	s.verificationMu.Lock()
+	s.verificationCache[id] = copyVerificationReport(report)
+	s.verificationMu.Unlock()
+	return report, nil
 }
