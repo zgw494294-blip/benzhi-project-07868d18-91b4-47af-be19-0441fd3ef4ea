@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"cleanroom-monitor-release/internal/domain/monitoring"
@@ -11,9 +12,11 @@ import (
 type Clock func() time.Time
 
 type Service struct {
-	repo      Repository
-	manifests ManifestService
-	clock     Clock
+	repo           Repository
+	manifests      ManifestService
+	clock          Clock
+	preflightMu    sync.RWMutex
+	preflightCache map[string]FreezePreflight
 }
 
 type FreezePreflight struct {
@@ -29,7 +32,7 @@ func NewService(repo Repository, manifests ManifestService, clock Clock) *Servic
 	if clock == nil {
 		clock = time.Now
 	}
-	return &Service{repo: repo, manifests: manifests, clock: clock}
+	return &Service{repo: repo, manifests: manifests, clock: clock, preflightCache: map[string]FreezePreflight{}}
 }
 
 func (s *Service) CreateCampaign(ctx context.Context, cmd CreateCampaignCommand) (*monitoring.Campaign, bool, error) {
@@ -136,6 +139,12 @@ func (s *Service) Freeze(ctx context.Context, cmd FreezeCommand) (*monitoring.Ca
 }
 
 func (s *Service) FreezePreflight(ctx context.Context, id string, candidateVersion int64) (FreezePreflight, error) {
+	s.preflightMu.RLock()
+	cached, ok := s.preflightCache[id]
+	s.preflightMu.RUnlock()
+	if ok {
+		return cached, nil
+	}
 	c, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return FreezePreflight{}, err
@@ -151,6 +160,9 @@ func (s *Service) FreezePreflight(ctx context.Context, id string, candidateVersi
 			return FreezePreflight{}, err
 		}
 	}
+	s.preflightMu.Lock()
+	s.preflightCache[id] = report
+	s.preflightMu.Unlock()
 	return report, nil
 }
 
